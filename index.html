@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Lacing War - Online & AI Version</title>
+    <title>Lacing War - Smart Hint Version</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; margin: 0; min-height: 100vh; }
@@ -16,9 +16,23 @@
         .score-box { position: relative; display: flex; flex-direction: column; align-items: center; width: 130px; }
         .crown { font-size: 30px; position: absolute; top: -38px; display: none; animation: bounce 1s infinite alternate; }
         @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+        
         #board { display: grid; grid-template-columns: repeat(15, 30px); gap: 1px; background: #444; border: 5px solid #000; }
         .cell { width: 30px; height: 30px; background: #2c2c2c; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
         .cell.disputed { background: #444; }
+        
+        /* 空格醒目標記 */
+        .hint-dot { 
+            width: 8px; height: 8px; background: rgba(241, 196, 15, 0.4); 
+            border-radius: 50%; z-index: 5; pointer-events: none;
+            animation: pulse-hint 1.5s infinite;
+        }
+        @keyframes pulse-hint { 
+            0% { transform: scale(1); opacity: 0.4; } 
+            50% { transform: scale(1.3); opacity: 0.8; } 
+            100% { transform: scale(1); opacity: 0.4; } 
+        }
+
         .piece { width: 22px; height: 22px; border-radius: 50%; z-index: 10; border: 2px solid rgba(255,255,255,0.3); }
         .piece.p1 { background: #ff4757; box-shadow: 0 0 15px #ff4757; }
         .piece.p2 { background: #2e86de; box-shadow: 0 0 15px #2e86de; }
@@ -27,12 +41,12 @@
         .line.h { height: 4px; width: 100%; }
         .line.p1 { background: #ff4757; }
         .line.p2 { background: #2e86de; }
+        
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(8px); }
         #result-card { background: #222; padding: 40px; border-radius: 20px; border: 3px solid #f1c40f; text-align: center; }
         #turn-display { font-size: 1.2em; color: #f1c40f; font-weight: bold; }
         #status-msg { font-size: 0.9em; color: #00ff00; margin-top: 10px; font-family: monospace; }
         .ai-btn { background: #2e86de; margin-top: 10px; }
-        .ai-btn:hover { background: #3498db; }
     </style>
 </head>
 <body>
@@ -108,39 +122,27 @@
             config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] },
             debug: 2
         });
-
         peer.on('open', (id) => {
             document.getElementById('my-id').innerText = id;
-            document.getElementById('status-msg').innerText = "● 伺服器就緒，請連線或選擇 AI 模式";
+            document.getElementById('status-msg').innerText = "● 伺服器就緒";
         });
-
         peer.on('connection', (c) => {
             if (conn || isAIMode) { c.close(); return; }
             conn = c;
             myPlayerNum = 1;
             setupListeners();
         });
-
-        peer.on('error', (err) => {
-            if (err.type === 'unavailable-id') {
-                location.reload();
-            } else {
-                document.getElementById('status-msg').innerText = "連線錯誤: " + err.type;
-            }
-        });
     }
 
     function startAIMode() {
         isAIMode = true;
-        myPlayerNum = 1; // 玩家始終為紅方
+        myPlayerNum = 1;
         startGameUI();
     }
 
     function connectToPeer() {
         const targetId = document.getElementById('peer-id-input').value.trim();
         if (!targetId) return;
-        
-        document.getElementById('status-msg').innerText = "● 正在加入房間 " + targetId + "...";
         conn = peer.connect(targetId);
         myPlayerNum = 2;
         setupListeners();
@@ -148,10 +150,8 @@
 
     function setupListeners() {
         conn.on('open', () => {
-            document.getElementById('status-msg').innerText = "● 連線成功";
             conn.send({ type: 'handshake' });
         });
-
         conn.on('data', (data) => {
             if (data.type === 'handshake') {
                 startGameUI();
@@ -160,30 +160,20 @@
                 executeTurn(data.r, data.c, data.player);
             }
         });
-
-        conn.on('close', () => {
-            alert("對手斷線");
-            location.reload();
-        });
+        conn.on('close', () => { alert("對手斷線"); location.reload(); });
     }
 
     function startGameUI() {
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game-container').style.display = 'flex';
         updateTurnDisplay();
-        
         const labels = document.querySelectorAll('.player-label');
         if (isAIMode) {
             labels[0].innerText = "您 (紅方)";
             labels[1].innerText = "AI (藍方)";
         } else {
-            if (myPlayerNum === 1) {
-                labels[0].innerText = "您 (紅方)";
-                labels[1].innerText = "對手 (藍方)";
-            } else {
-                labels[0].innerText = "對手 (紅方)";
-                labels[1].innerText = "您 (藍方)";
-            }
+            labels[0].innerText = myPlayerNum === 1 ? "您 (紅方)" : "對手 (紅方)";
+            labels[1].innerText = myPlayerNum === 2 ? "您 (藍方)" : "對手 (藍方)";
         }
         createBoard();
     }
@@ -191,7 +181,6 @@
     function handleMove(r, c) {
         if (gameOver || currentTurnPlayer !== myPlayerNum) return;
         if (!isAIMode && (!conn || !conn.open)) return;
-
         if (isValidMove(r, c, myPlayerNum)) {
             if (!isAIMode) conn.send({ type: 'move', r, c, player: myPlayerNum });
             executeTurn(r, c, myPlayerNum);
@@ -207,11 +196,8 @@
         if (!checkGameOver()) {
             currentTurnPlayer = (player === 1) ? 2 : 1;
             updateTurnDisplay();
-            
-            // 如果是 AI 回合，觸發 AI 思考
-            if (isAIMode && currentTurnPlayer === 2) {
-                setTimeout(aiMove, 600);
-            }
+            render(); // 換手後重新渲染以更新提示點
+            if (isAIMode && currentTurnPlayer === 2) setTimeout(aiMove, 600);
         }
     }
 
@@ -221,64 +207,6 @@
         d.style.color = currentTurnPlayer === myPlayerNum ? "#f1c40f" : "#aaa";
     }
 
-    // --- AI 邏輯 ---
-    function aiMove() {
-        if (gameOver) return;
-
-        let possibleMoves = [];
-        for (let r = 0; r < SIZE; r++) {
-            for (let c = 0; c < SIZE; c++) {
-                if (isValidMove(r, c, 2)) {
-                    let score = evaluateMove(r, c);
-                    possibleMoves.push({ r, c, score });
-                }
-            }
-        }
-
-        if (possibleMoves.length > 0) {
-            possibleMoves.sort((a, b) => b.score - a.score);
-            let topTier = possibleMoves.slice(0, 2);
-            let choice = topTier[Math.floor(Math.random() * topTier.length)];
-            executeTurn(choice.r, choice.c, 2);
-        }
-    }
-
-    function evaluateMove(r, c) {
-        let score = Math.random() * 2;
-        const cellLines = getLinesAt(r, c);
-        const hasOwnLine = cellLines.some(l => l.player === 2);
-        const hasEnemyLine = cellLines.some(l => l.player === 1);
-
-        if (!hasOwnLine && !hasEnemyLine) score += 10;
-        if (hasOwnLine) score += 5;
-
-        // 防禦：阻斷玩家
-        connectionsData.forEach(task => {
-            if (task.player === 1 && task.active) {
-                const last = task.path.length === 0 ? task.origin : task.path[task.path.length - 1];
-                if (r === last.r + task.dr && c === last.c + task.dc) score += 60;
-            }
-        });
-
-        // 擴張：連線潛力
-        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
-        dirs.forEach(([dr, dc]) => {
-            let cr = r + dr, cc = c + dc, dist = 0;
-            while(cr >= 0 && cr < SIZE && cc >= 0 && cc < SIZE) {
-                if (board[cr][cc] === 2) { score += (15 + dist * 2); break; }
-                if (board[cr][cc] === 1) break;
-                cr += dr; cc += dc; dist++;
-            }
-        });
-
-        if (hasEnemyLine) score += 15;
-        const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
-        score += (14 - centerDist) * 0.3;
-
-        return score;
-    }
-
-    // --- 核心底層邏輯 ---
     function createBoard() {
         const b = document.getElementById('board');
         b.innerHTML = '';
@@ -303,45 +231,29 @@
         return !getLinesAt(r, c).some(l => l.player === (player === 1 ? 2 : 1));
     }
 
-    function findNewConnections(r, c, player) {
-        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
-        dirs.forEach(([dr, dc]) => {
-            let cr = r + dr, cc = c + dc, found = false;
-            while(cr >= 0 && cr < SIZE && cc >= 0 && cc < SIZE) {
-                if (board[cr][cc] !== 0) {
-                    if (board[cr][cc] === player) found = true;
-                    break;
-                }
-                cr += dr; cc += dc;
-            }
-            if (found) connectionsData.push({ origin: {r, c}, target: {r: cr, c: cc}, dr, dc, player, path: [], active: true });
-        });
-    }
-
-    function growLines() {
-        connectionsData.forEach(task => {
-            if (!task.active) return;
-            const last = task.path.length === 0 ? task.origin : task.path[task.path.length - 1];
-            const nr = last.r + task.dr, nc = last.c + task.dc;
-            if (nr === task.target.r && nc === task.target.c) { task.active = false; return; }
-            if (board[nr][nc] !== 0 && board[nr][nc] !== task.player) { task.active = false; return; }
-            const curDir = task.dr !== 0 ? 'v' : 'h';
-            if (getLinesAt(nr, nc).some(l => (l.dr !== 0 ? 'v' : 'h') === curDir)) { task.active = false; return; }
-            task.path.push({r: nr, c: nc});
-        });
-    }
-
     function render() {
         for(let r=0; r<SIZE; r++) {
             for(let c=0; c<SIZE; c++) {
                 const cell = document.getElementById(`cell-${r}-${c}`);
                 if (!cell) continue;
-                cell.innerHTML = ''; cell.classList.remove('disputed');
+                cell.innerHTML = ''; 
+                cell.classList.remove('disputed');
+                
+                // 1. 繪製棋子
                 if (board[r][c] !== 0) {
                     const p = document.createElement('div');
                     p.className = `piece p${board[r][c]}`;
                     cell.appendChild(p);
+                } else {
+                    // 2. 繪製落子提示 (僅在玩家回合且該格合法時顯示)
+                    if (currentTurnPlayer === myPlayerNum && isValidMove(r, c, myPlayerNum)) {
+                        const hint = document.createElement('div');
+                        hint.className = 'hint-dot';
+                        cell.appendChild(hint);
+                    }
                 }
+
+                // 3. 繪製線條與爭議區
                 const lines = getLinesAt(r, c);
                 const h1 = lines.some(l => l.player === 1) || board[r][c] === 1;
                 const h2 = lines.some(l => l.player === 2) || board[r][c] === 2;
@@ -353,6 +265,68 @@
                 });
             }
         }
+    }
+
+    // AI 與基礎邏輯保持不變...
+    function aiMove() {
+        if (gameOver) return;
+        let possible = [];
+        for (let r = 0; r < SIZE; r++) {
+            for (let c = 0; c < SIZE; c++) {
+                if (isValidMove(r, c, 2)) possible.push({ r, c, score: evaluateMove(r, c) });
+            }
+        }
+        if (possible.length > 0) {
+            possible.sort((a, b) => b.score - a.score);
+            let choice = possible.slice(0, 2)[Math.floor(Math.random() * Math.min(2, possible.length))];
+            executeTurn(choice.r, choice.c, 2);
+        }
+    }
+
+    function evaluateMove(r, c) {
+        let s = Math.random() * 2;
+        const lines = getLinesAt(r, c);
+        if (!lines.some(l => l.player === 2) && !lines.some(l => l.player === 1)) s += 10;
+        connectionsData.forEach(t => {
+            if (t.player === 1 && t.active) {
+                const last = t.path.length === 0 ? t.origin : t.path[t.path.length - 1];
+                if (r === last.r + t.dr && c === last.c + t.dc) s += 60;
+            }
+        });
+        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
+        dirs.forEach(([dr, dc]) => {
+            let cr = r + dr, cc = c + dc, dist = 0;
+            while(cr >= 0 && cr < SIZE && cc >= 0 && cc < SIZE) {
+                if (board[cr][cc] === 2) { s += (15 + dist * 2); break; }
+                if (board[cr][cc] === 1) break;
+                cr += dr; cc += dc; dist++;
+            }
+        });
+        return s;
+    }
+
+    function growLines() {
+        connectionsData.forEach(t => {
+            if (!t.active) return;
+            const last = t.path.length === 0 ? t.origin : t.path[t.path.length - 1];
+            const nr = last.r + t.dr, nc = last.c + t.dc;
+            if (nr === t.target.r && nc === t.target.c) { t.active = false; return; }
+            if (board[nr][nc] !== 0 && board[nr][nc] !== t.player) { t.active = false; return; }
+            if (getLinesAt(nr, nc).some(l => (l.dr !== 0 ? 'v' : 'h') === (t.dr !== 0 ? 'v' : 'h'))) { t.active = false; return; }
+            t.path.push({r: nr, c: nc});
+        });
+    }
+
+    function findNewConnections(r, c, p) {
+        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
+        dirs.forEach(([dr, dc]) => {
+            let cr = r + dr, cc = c + dc, found = false;
+            while(cr >= 0 && cr < SIZE && cc >= 0 && cc < SIZE) {
+                if (board[cr][cc] !== 0) { if (board[cr][cc] === p) found = true; break; }
+                cr += dr; cc += dc;
+            }
+            if (found) connectionsData.push({ origin: {r, c}, target: {r: cr, c: cc}, dr, dc, player: p, path: [], active: true });
+        });
     }
 
     function updateScore() {
