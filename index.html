@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Lacing War - Online & AI Version</title>
+    <title>Lacing War - Short ID Version</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; margin: 0; min-height: 100vh; }
@@ -31,8 +31,6 @@
         #result-card { background: #222; padding: 40px; border-radius: 20px; border: 3px solid #f1c40f; text-align: center; }
         #turn-display { font-size: 1.2em; color: #f1c40f; font-weight: bold; }
         #status-msg { font-size: 0.9em; color: #00ff00; margin-top: 10px; font-family: monospace; }
-        .ai-btn { background: #2e86de; margin-top: 10px; }
-        .ai-btn:hover { background: #3498db; }
     </style>
 </head>
 <body>
@@ -47,8 +45,6 @@
     <div class="connection-step">
         <input type="text" id="peer-id-input" placeholder="對手的房號" maxlength="5">
         <button onclick="connectToPeer()">加入房間</button>
-        <div style="margin: 15px 0; color: #888;">— 或 —</div>
-        <button class="ai-btn" onclick="startAIMode()">與 AI 對戰</button>
     </div>
     <div id="status-msg">正在尋找 PeerJS 伺服器...</div>
 </div>
@@ -59,12 +55,12 @@
         <div class="score-board">
             <div class="score-box">
                 <div id="crown-p1" class="crown">👑</div>
-                <div class="player-label" style="color: #ff4757;">您 (紅方)</div>
+                <div class="player-label" style="color: #ff4757;">紅方 (P1)</div>
                 <div id="p1-score">0</div>
             </div>
             <div class="score-box">
                 <div id="crown-p2" class="crown">👑</div>
-                <div class="player-label" style="color: #2e86de;">對手 (藍方)</div>
+                <div class="player-label" style="color: #2e86de;">藍方 (P2)</div>
                 <div id="p2-score">0</div>
             </div>
         </div>
@@ -84,6 +80,7 @@
 </div>
 
 <script>
+    // 生成 5 位隨機英數字
     function generateShortId() {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
         let result = '';
@@ -100,10 +97,10 @@
     let peer, conn;
     let myPlayerNum = 0; 
     let currentTurnPlayer = 1;
-    let isAIMode = false;
 
     function initPeer() {
         const shortId = generateShortId();
+        // 指定 ID 初始化
         peer = new Peer(shortId, {
             config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] },
             debug: 2
@@ -111,11 +108,11 @@
 
         peer.on('open', (id) => {
             document.getElementById('my-id').innerText = id;
-            document.getElementById('status-msg').innerText = "● 伺服器就緒，請連線或選擇 AI 模式";
+            document.getElementById('status-msg').innerText = "● 伺服器就緒，請告知對手房號";
         });
 
         peer.on('connection', (c) => {
-            if (conn || isAIMode) { c.close(); return; }
+            if (conn) { c.close(); return; }
             conn = c;
             myPlayerNum = 1;
             setupListeners();
@@ -123,17 +120,12 @@
 
         peer.on('error', (err) => {
             if (err.type === 'unavailable-id') {
+                // 如果 ID 重複，自動刷新頁面重試
                 location.reload();
             } else {
                 document.getElementById('status-msg').innerText = "連線錯誤: " + err.type;
             }
         });
-    }
-
-    function startAIMode() {
-        isAIMode = true;
-        myPlayerNum = 1; // 玩家始終為紅方
-        startGameUI();
     }
 
     function connectToPeer() {
@@ -171,29 +163,22 @@
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game-container').style.display = 'flex';
         updateTurnDisplay();
-        
         const labels = document.querySelectorAll('.player-label');
-        if (isAIMode) {
+        if (myPlayerNum === 1) {
             labels[0].innerText = "您 (紅方)";
-            labels[1].innerText = "AI (藍方)";
+            labels[1].innerText = "對手 (藍方)";
         } else {
-            if (myPlayerNum === 1) {
-                labels[0].innerText = "您 (紅方)";
-                labels[1].innerText = "對手 (藍方)";
-            } else {
-                labels[0].innerText = "對手 (紅方)";
-                labels[1].innerText = "您 (藍方)";
-            }
+            labels[0].innerText = "對手 (紅方)";
+            labels[1].innerText = "您 (藍方)";
         }
         createBoard();
     }
 
+    // --- 核心邏輯補完 ---
     function handleMove(r, c) {
-        if (gameOver || currentTurnPlayer !== myPlayerNum) return;
-        if (!isAIMode && (!conn || !conn.open)) return;
-
+        if (gameOver || currentTurnPlayer !== myPlayerNum || !conn || !conn.open) return;
         if (isValidMove(r, c, myPlayerNum)) {
-            if (!isAIMode) conn.send({ type: 'move', r, c, player: myPlayerNum });
+            conn.send({ type: 'move', r, c, player: myPlayerNum });
             executeTurn(r, c, myPlayerNum);
         }
     }
@@ -207,78 +192,15 @@
         if (!checkGameOver()) {
             currentTurnPlayer = (player === 1) ? 2 : 1;
             updateTurnDisplay();
-            
-            // 如果是 AI 回合，觸發 AI 思考
-            if (isAIMode && currentTurnPlayer === 2) {
-                setTimeout(aiMove, 600);
-            }
         }
     }
 
     function updateTurnDisplay() {
         const d = document.getElementById('turn-display');
-        d.innerText = currentTurnPlayer === myPlayerNum ? "★ 您的回合 ★" : (isAIMode ? "AI 正在思考..." : "等待對手落子...");
+        d.innerText = currentTurnPlayer === myPlayerNum ? "★ 您的回合 ★" : "等待對手落子...";
         d.style.color = currentTurnPlayer === myPlayerNum ? "#f1c40f" : "#aaa";
     }
 
-    // --- AI 邏輯 ---
-    function aiMove() {
-        if (gameOver) return;
-
-        let possibleMoves = [];
-        for (let r = 0; r < SIZE; r++) {
-            for (let c = 0; c < SIZE; c++) {
-                if (isValidMove(r, c, 2)) {
-                    let score = evaluateMove(r, c);
-                    possibleMoves.push({ r, c, score });
-                }
-            }
-        }
-
-        if (possibleMoves.length > 0) {
-            possibleMoves.sort((a, b) => b.score - a.score);
-            let topTier = possibleMoves.slice(0, 2);
-            let choice = topTier[Math.floor(Math.random() * topTier.length)];
-            executeTurn(choice.r, choice.c, 2);
-        }
-    }
-
-    function evaluateMove(r, c) {
-        let score = Math.random() * 2;
-        const cellLines = getLinesAt(r, c);
-        const hasOwnLine = cellLines.some(l => l.player === 2);
-        const hasEnemyLine = cellLines.some(l => l.player === 1);
-
-        if (!hasOwnLine && !hasEnemyLine) score += 10;
-        if (hasOwnLine) score += 5;
-
-        // 防禦：阻斷玩家
-        connectionsData.forEach(task => {
-            if (task.player === 1 && task.active) {
-                const last = task.path.length === 0 ? task.origin : task.path[task.path.length - 1];
-                if (r === last.r + task.dr && c === last.c + task.dc) score += 60;
-            }
-        });
-
-        // 擴張：連線潛力
-        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
-        dirs.forEach(([dr, dc]) => {
-            let cr = r + dr, cc = c + dc, dist = 0;
-            while(cr >= 0 && cr < SIZE && cc >= 0 && cc < SIZE) {
-                if (board[cr][cc] === 2) { score += (15 + dist * 2); break; }
-                if (board[cr][cc] === 1) break;
-                cr += dr; cc += dc; dist++;
-            }
-        });
-
-        if (hasEnemyLine) score += 15;
-        const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
-        score += (14 - centerDist) * 0.3;
-
-        return score;
-    }
-
-    // --- 核心底層邏輯 ---
     function createBoard() {
         const b = document.getElementById('board');
         b.innerHTML = '';
@@ -325,8 +247,7 @@
             const nr = last.r + task.dr, nc = last.c + task.dc;
             if (nr === task.target.r && nc === task.target.c) { task.active = false; return; }
             if (board[nr][nc] !== 0 && board[nr][nc] !== task.player) { task.active = false; return; }
-            const curDir = task.dr !== 0 ? 'v' : 'h';
-            if (getLinesAt(nr, nc).some(l => (l.dr !== 0 ? 'v' : 'h') === curDir)) { task.active = false; return; }
+            if (getLinesAt(nr, nc).some(l => (l.dr !== 0 ? 'v' : 'h') === (task.dr !== 0 ? 'v' : 'h'))) { task.active = false; return; }
             task.path.push({r: nr, c: nc});
         });
     }
