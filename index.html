@@ -21,8 +21,23 @@
         
         #board { display: grid; grid-template-columns: repeat(15, 30px); gap: 1px; background: #444; border: 5px solid #000; }
         .cell { width: 30px; height: 30px; background: #2c2c2c; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; transition: background 0.2s; }
+        .cell:hover { background: #3d3d3d; }
+
+        /* 特殊格子狀態 */
         .cell.invalid { background: #111; }
         .cell.disputed { background: #4a4a4a !important; box-shadow: inset 0 0 5px #000; }
+
+        /* 黃色方形外光暈：當空格 < 20 時觸發 */
+        .cell.glow-hint { 
+            box-shadow: inset 0 0 10px #f1c40f; 
+            z-index: 5;
+            animation: glow-pulse 2s infinite;
+        }
+        @keyframes glow-pulse {
+            0% { box-shadow: inset 0 0 5px rgba(241, 196, 15, 0.4); }
+            50% { box-shadow: inset 0 0 12px rgba(241, 196, 15, 0.8); }
+            100% { box-shadow: inset 0 0 5px rgba(241, 196, 15, 0.4); }
+        }
 
         .piece { width: 22px; height: 22px; border-radius: 50%; z-index: 10; border: 2px solid rgba(255,255,255,0.3); }
         .piece.p1 { background: #ff4757; box-shadow: 0 0 15px #ff4757; }
@@ -35,7 +50,6 @@
 
         #game-controls { margin-top: 25px; display: none; }
         .reset-btn { background: #e67e22; padding: 12px 30px; font-size: 1.1em; }
-        .reset-btn:hover { background: #f39c12; }
         
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(8px); }
         #result-card { background: #222; padding: 40px; border-radius: 20px; border: 3px solid #f1c40f; text-align: center; }
@@ -162,21 +176,13 @@
     function startGameUI() {
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game-container').style.display = 'flex';
-        
         const lp1 = document.getElementById('label-p1');
         const lp2 = document.getElementById('label-p2');
-
         if (isAIMode) {
-            lp1.innerText = "您 (紅方)";
-            lp2.innerText = "AI (藍方)";
+            lp1.innerText = "您 (紅方)"; lp2.innerText = "AI (藍方)";
         } else {
-            if (myPlayerNum === 1) {
-                lp1.innerText = "您 (紅方)";
-                lp2.innerText = "對手 (藍方)";
-            } else {
-                lp1.innerText = "對手 (紅方)";
-                lp2.innerText = "您 (藍方)";
-            }
+            if (myPlayerNum === 1) { lp1.innerText = "您 (紅方)"; lp2.innerText = "對手 (藍方)"; }
+            else { lp1.innerText = "對手 (紅方)"; lp2.innerText = "您 (藍方)"; }
         }
         updateTurnDisplay();
         createBoard();
@@ -236,7 +242,21 @@
         return !getLinesAt(r, c).some(l => l.player === (player === 1 ? 2 : 1));
     }
 
+    // 計算當前盤面上所有合法的落子空格總數
+    function countValidEmptyCells() {
+        let count = 0;
+        for (let r = 0; r < SIZE; r++) {
+            for (let c = 0; c < SIZE; c++) {
+                if (isValidMove(r, c, currentTurnPlayer)) count++;
+            }
+        }
+        return count;
+    }
+
     function render() {
+        const validCount = countValidEmptyCells();
+        const showHint = validCount <= 20 && !gameOver;
+
         for(let r=0; r<SIZE; r++) {
             for(let c=0; c<SIZE; c++) {
                 const cell = document.getElementById(`cell-${r}-${c}`);
@@ -245,9 +265,12 @@
                 const lines = getLinesAt(r, c);
                 const h1 = lines.some(l => l.player === 1) || board[r][c] === 1;
                 const h2 = lines.some(l => l.player === 2) || board[r][c] === 2;
-                cell.classList.remove('invalid', 'disputed');
+                
+                cell.classList.remove('invalid', 'disputed', 'glow-hint');
+                
                 if (h1 && h2) cell.classList.add('disputed');
                 else if (!isValidMove(r, c, currentTurnPlayer)) cell.classList.add('invalid');
+                else if (showHint && currentTurnPlayer === myPlayerNum) cell.classList.add('glow-hint');
 
                 if (board[r][c] !== 0) {
                     const p = document.createElement('div');
@@ -263,6 +286,7 @@
         }
     }
 
+    // AI 邏輯與輔助函式 (不變)
     function aiMove() {
         if (gameOver) return;
         let possible = [];
