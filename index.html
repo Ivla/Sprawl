@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Lacing War - Ultimate Version</title>
+    <title>Lacing War - Final Fix</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; margin: 0; min-height: 100vh; }
@@ -33,12 +33,10 @@
         .line.p1 { background: #ff4757; }
         .line.p2 { background: #2e86de; }
 
-        /* 再來一局按鈕容器 */
         #game-controls { margin-top: 25px; display: none; }
         .reset-btn { background: #e67e22; padding: 12px 30px; font-size: 1.1em; }
         .reset-btn:hover { background: #f39c12; }
         
-        /* 結算頁面 */
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(8px); }
         #result-card { background: #222; padding: 40px; border-radius: 20px; border: 3px solid #f1c40f; text-align: center; }
         #turn-display { font-size: 1.2em; color: #f1c40f; font-weight: bold; }
@@ -70,12 +68,12 @@
         <div class="score-board">
             <div class="score-box">
                 <div id="crown-p1" class="crown">👑</div>
-                <div class="player-label" style="color: #ff4757;">您 (紅方)</div>
+                <div id="label-p1" class="player-label" style="color: #ff4757; font-weight: bold;">紅方 (P1)</div>
                 <div id="p1-score">0</div>
             </div>
             <div class="score-box">
                 <div id="crown-p2" class="crown">👑</div>
-                <div class="player-label" style="color: #2e86de;">對手 (藍方)</div>
+                <div id="label-p2" class="player-label" style="color: #2e86de; font-weight: bold;">藍方 (P2)</div>
                 <div id="p2-score">0</div>
             </div>
         </div>
@@ -129,7 +127,7 @@
         peer.on('connection', (c) => {
             if (conn || isAIMode) { c.close(); return; }
             conn = c;
-            myPlayerNum = 1;
+            myPlayerNum = 1; // 被連者是紅方
             setupListeners();
         });
     }
@@ -144,7 +142,7 @@
         const targetId = document.getElementById('peer-id-input').value.trim();
         if (!targetId) return;
         conn = peer.connect(targetId);
-        myPlayerNum = 2;
+        myPlayerNum = 2; // 發起連線者是藍方
         setupListeners();
     }
 
@@ -166,6 +164,24 @@
     function startGameUI() {
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game-container').style.display = 'flex';
+        
+        const labelP1 = document.getElementById('label-p1');
+        const labelP2 = document.getElementById('label-p2');
+
+        if (isAIMode) {
+            labelP1.innerText = "您 (紅方)";
+            labelP2.innerText = "AI (藍方)";
+        } else {
+            // 關鍵修正：根據玩家編號標註「您」
+            if (myPlayerNum === 1) {
+                labelP1.innerText = "您 (紅方)";
+                labelP2.innerText = "對手 (藍方)";
+            } else {
+                labelP1.innerText = "對手 (紅方)";
+                labelP2.innerText = "您 (藍方)";
+            }
+        }
+        
         updateTurnDisplay();
         createBoard();
     }
@@ -294,15 +310,13 @@
         connectionsData.forEach(t => {
             if (!t.active) return;
             const last = t.path.length === 0 ? t.origin : t.path[t.path.length - 1];
-            const nr = last.r + task_dr(t), nc = last.c + task_dc(t);
+            const nr = last.r + t.dr, nc = last.c + t.dc;
             if (nr === t.target.r && nc === t.target.c) { t.active = false; return; }
             if (board[nr][nc] !== 0 && board[nr][nc] !== t.player) { t.active = false; return; }
             if (getLinesAt(nr, nc).some(l => (l.dr !== 0 ? 'v' : 'h') === (t.dr !== 0 ? 'v' : 'h'))) { t.active = false; return; }
             t.path.push({r: nr, c: nc});
         });
     }
-    // 輔助函式修正 dr/dc 讀取
-    function task_dr(t) { return t.dr; } function task_dc(t) { return t.dc; }
 
     function findNewConnections(r, c, p) {
         const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
@@ -358,7 +372,6 @@
         else if (s.p2 > s.p1) { wt.innerText = "🎉 藍方 勝利！"; document.getElementById('crown-p2').style.display = 'block'; }
         else { wt.innerText = "⚖️ 平手！"; }
         
-        // 3 秒後自動關閉結算頁面並顯示再來一局按鈕
         setTimeout(() => {
             document.getElementById('overlay').style.display = 'none';
             document.getElementById('game-controls').style.display = 'block';
